@@ -3,15 +3,27 @@
    [claxon.impl :as i])
   (:import
    [java.io BufferedInputStream BufferedWriter OutputStreamWriter]
-   [java.net Socket]
+   [java.net InetSocketAddress Socket]
    [java.nio.charset StandardCharsets]
    [java.util.concurrent Executors]))
 
 (defn connect
-  [{:keys [^String host port claxon/executor] :as opts}]
-  (let [host (or host "localhost")
-        port (or port 4222)
-        sock (Socket. host (int port))
+  [{:keys [urls timeout-ms claxon/executor] :as opts}]
+  (let [urls (or urls ["nats://localhost:4222"])
+        timeout-ms (or timeout-ms 2000)
+        ^Socket sock (->> urls
+                          (map i/parse-nats-url)
+                          (shuffle)
+                          (map (fn [{:keys [^String host ^Integer port]}]
+                                 (try
+                                   (doto (Socket.)
+                                     (.connect (InetSocketAddress. host port) timeout-ms))
+                                   (catch Exception _
+                                     nil))))
+                          (remove nil?)
+                          (first))
+        _ (when-not sock
+            (throw (ex-info "Cannot connect to any of the urls" {:urls urls})))
         in (-> sock
                .getInputStream
                BufferedInputStream.)
@@ -23,6 +35,8 @@
     ;; TODO: CONNECT with opts
     (i/start in (or executor (Executors/newVirtualThreadPerTaskExecutor)))
     conn))
+
+;; TODO: draw the rest of the owl
 
 (defn close
   [{:keys [socket]}]

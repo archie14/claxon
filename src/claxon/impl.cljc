@@ -9,11 +9,39 @@
     EOFException
     InputStream
     Writer]
+   [java.net URI]
    [java.util.concurrent ExecutorService]))
 
 (def read-json #?(:bb json/parse-string :clj json/read-str))
 
 (def write-json #?(:bb json/generate-string :clj json/write-str))
+
+(defn parse-nats-url
+  [url]
+  (let [uri (URI. url)
+        supported-schemes #{"nats"}
+        scheme (.getScheme uri)
+        _ (when (not (contains? supported-schemes scheme))
+            (throw (IllegalArgumentException. (str "Unsupported scheme: " url))))
+        host  (.getHost uri)
+        port  (let [p (.getPort uri)]
+                (if (pos? p) p 4222))
+        user-info (.getUserInfo uri)
+        [user password token]
+        (cond
+          (nil? user-info)
+          [nil nil nil]
+
+          (str/includes? user-info ":")
+          (let [[u p] (str/split user-info #":" 2)]
+            [u p nil])
+          :else [user-info nil user-info])]
+    {:scheme scheme
+     :host host
+     :port port
+     :user user
+     :password password
+     :token token}))
 
 (def frame-shapes
   {"INFO" {:args [{:name :info :type :json}]}
@@ -206,11 +234,13 @@
 (defn start
   [in ^ExecutorService executor]
   (.submit executor
-           ^Runnable #(loop []
-                        (prn :loopin)
-                        (let [frame (read-frame in)]
-                          (println frame))
-                        (recur))))
+           ^Runnable
+           #(loop []
+              (let [frame (read-frame in)]
+                (println frame))
+              (recur))))
 
 (comment
-  (set! *warn-on-reflection* true))
+  (set! *warn-on-reflection* true)
+
+  (parse-nats-url "nats://foo"))

@@ -160,3 +160,68 @@
   (let [expected-ops #{"INFO" "CONNECT" "PUB" "HPUB" "MSG" "HMSG"
                        "SUB" "UNSUB" "PING" "PONG" "+OK" "-ERR"}]
     (is (= expected-ops (set (keys impl/frame-shapes))))))
+
+(deftest parse-nats-url-test
+  (testing "basic URLs without authentication"
+    (let [parsed (impl/parse-nats-url "nats://localhost:4222")]
+      (is (= {:scheme "nats"
+              :host   "localhost"
+              :port   4222
+              :user   nil
+              :password nil
+              :token  nil}
+             parsed)))
+    (let [parsed (impl/parse-nats-url "nats://nats.example.com")]
+      (is (= "nats" (:scheme parsed)))
+      (is (= "nats.example.com" (:host parsed)))
+      (is (= 4222 (:port parsed)))
+      (is (nil? (:user parsed))))
+
+    (let [parsed (impl/parse-nats-url "nats://1.2.3.4:5000")]
+      (is (= "1.2.3.4" (:host parsed)))
+      (is (= 5000 (:port parsed)))))
+
+  (testing "URLs with user:password authentication"
+    (let [parsed (impl/parse-nats-url "nats://alice:secret@localhost:4222")]
+      (is (= "alice" (:user parsed)))
+      (is (= "secret" (:password parsed)))
+      (is (nil? (:token parsed)))))
+
+  (testing "URLs with token authentication"
+    (let [parsed (impl/parse-nats-url "nats://mytoken@localhost:4222")]
+      (is (= "mytoken" (:user parsed)))
+      (is (nil? (:password parsed)))
+      (is (= "mytoken" (:token parsed))))
+    (let [parsed (impl/parse-nats-url "nats://sometoken@example.com")]
+      (is (= "sometoken" (:user parsed)))
+      (is (= "sometoken" (:token parsed)))))
+
+  (testing "default port when missing"
+    (let [parsed (impl/parse-nats-url "nats://localhost")]
+      (is (= 4222 (:port parsed))))
+    (let [parsed (impl/parse-nats-url "nats://localhost:")]
+      (is (= 4222 (:port parsed)))))
+
+  (testing "unsupported scheme throws IllegalArgumentException"
+    (is (thrown? IllegalArgumentException (impl/parse-nats-url "tls://localhost:4443")))
+    (is (thrown? IllegalArgumentException (impl/parse-nats-url "ws://localhost")))
+    (is (thrown? IllegalArgumentException (impl/parse-nats-url "http://nats")))
+    (is (thrown? IllegalArgumentException (impl/parse-nats-url "nats2://localhost"))))
+
+  (testing "malformed or invalid URLs"
+    (is (thrown? Exception (impl/parse-nats-url "nats://")))
+    (is (thrown? Exception (impl/parse-nats-url "not-a-url"))))
+
+  (testing "edge cases for user-info"
+    (let [parsed (impl/parse-nats-url "nats://user:pass:with:colon@localhost")]
+      (is (= "user" (:user parsed)))
+      (is (= "pass:with:colon" (:password parsed))))
+    (let [parsed (impl/parse-nats-url "nats://@localhost")]
+      (is (= "" (:user parsed)))
+      (is (nil? (:password parsed)))
+      (is (= "" (:token parsed)))))
+
+  (testing "URLs with query strings or paths are ignored by URI, but we don't use them"
+    (let [parsed (impl/parse-nats-url "nats://localhost:4222?foo=bar")]
+      (is (= "localhost" (:host parsed)))
+      (is (= 4222 (:port parsed))))))
