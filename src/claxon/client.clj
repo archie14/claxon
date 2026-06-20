@@ -9,16 +9,23 @@
    [java.util.concurrent ExecutorService]))
 
 (defn add-handler
-  [handler {:keys [cmd args]}]
-  (let [id (swap! i/handler-ids inc)]
-    (swap! i/handlers assoc id {:fn handler :matches {:cnd cmd :args args}})))
+  [conn handler {:keys [op args]}]
+  (swap! i/handlers
+         conj
+         {:conn (:id conn)
+          :fn handler
+          :matches {:op op :args args}}))
 
 (defn connect
   ([]
    (connect {}))
   ([opts]
    (let [opts (merge (conf/defaults) opts)
-         {:keys [claxon/urls claxon/timeout-ms claxon/executor claxon/frame-shapes]} opts
+         {:keys [claxon/urls
+                 claxon/timeout-ms
+                 claxon/executor
+                 claxon/handlers
+                 claxon/frame-shapes]} opts
          ^Socket sock (->> urls
                            (map i/parse-nats-url)
                            (shuffle)
@@ -37,19 +44,27 @@
                  .getOutputStream
                  (OutputStreamWriter. StandardCharsets/UTF_8)
                  BufferedWriter.)
-         conn {:socket sock
+         conn {:id (swap! i/conn-ids inc)
+               :socket sock
                :reader in
                :writer out
                :executor executor
                :frame-shapes frame-shapes}]
-     ;; TODO: CONNECT with opts
+     (run! (fn [[{:keys [op args]} f]]
+             (add-handler conn f {:op op :args args}))
+           handlers)
      (i/start conn)
+     (i/snd conn "CONNECT" (i/write-json (dissoc opts
+                                                 :claxon/urls
+                                                 :claxon/timeout-ms
+                                                 :claxon/executor
+                                                 :claxon/handlers
+                                                 :claxon/frame-shapes)))
      conn)))
 
-;; TODO: draw the rest of the owl
-
 (defn close
-  [{:keys [socket executor]}]
+  [{:keys [socket executor id]}]
+  (swap! i/handlers (fn [h] (vec (remove #(= (:conn %) id) h))))
   (ExecutorService/.shutdown executor)
   (Socket/.close socket))
 
@@ -57,8 +72,6 @@
   (set! *warn-on-reflection* true)
 
   (def conn (connect))
-
-  (add-handler #() {})
 
   (i/snd conn "PING")
 

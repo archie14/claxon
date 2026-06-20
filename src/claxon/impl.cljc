@@ -14,8 +14,8 @@
 
 (def read-json #?(:bb json/parse-string :clj json/read-str))
 (def write-json #?(:bb json/generate-string :clj json/write-str))
-(defonce handler-ids (atom 0))
-(defonce handlers (atom {}))
+(defonce conn-ids (atom 0))
+(defonce handlers (atom [])) ; TODO: Optimise
 
 (defn parse-nats-url
   [url]
@@ -45,10 +45,10 @@
      :token token}))
 
 (defn snd
-  ([conn cmd]
-   (snd conn cmd nil))
-  ([{:keys [^Writer writer]} cmd msg]
-   (.write writer (str cmd msg "\r\n"))
+  ([conn op]
+   (snd conn op nil))
+  ([{:keys [^Writer writer]} op msg]
+   (.write writer (str op (if msg (str " " msg) "") "\r\n"))
    (.flush writer)))
 
 (defn read-all
@@ -192,7 +192,8 @@
     (when-not shape
       (throw (ex-info "unknown op" {:op op :line line})))
     (let [args (parse-args (:args shape) rest-line)
-          payloads (when (:payloads shape) (read-payloads in (:payloads shape) args))]
+          payloads (when (:payloads shape)
+                     (read-payloads in (:payloads shape) args))]
       (cond-> {:op op}
         args (assoc :args args)
         payloads (merge payloads)))))
@@ -200,20 +201,32 @@
 (defn submap?
   [super sub]
   (every? (fn [[k v]]
-            (and (contains? super k) (= v (get super k))))
+            (and (contains? super k)
+                 (= v (get super k))))
           sub))
 
+(defn dispatch
+  [frame handlers conn]
+  (let [matched (filter (fn [handler]
+                          (let [{:keys [op args]} (:matches handler)]
+                            (and (= op (:op frame))
+                                 (submap? (:args frame) args))))
+                        handlers)]
+    (when-let [h (first matched)]
+      ((:fn h) frame conn))))
+
 (defn start
-  [{:keys [reader ^ExecutorService executor frame-shapes]}]
+  [{:keys [reader ^ExecutorService executor frame-shapes] :as conn}]
   (.submit executor
            ^Runnable
            #(loop []
               (let [frame (read-frame reader frame-shapes)]
-                (prn @handlers)
-                (prn frame))
+                (dispatch frame @handlers conn))
               (recur))))
 
 (comment
   (set! *warn-on-reflection* true)
+
+  (submap? nil {:foo :bar})
 
   (parse-nats-url "nats://foo"))

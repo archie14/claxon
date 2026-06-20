@@ -41,8 +41,5 @@
                          "PING" {}
                          "PONG" {}
                          "+OK" {}
-                         "-ERR" {:args [{:name :msg :type :str}]}}})
-
-(def default-handlers
-  {{:cmd "PING"} (fn [_ out]
-                   (i/snd out "PONG"))})
+                         "-ERR" {:args [{:name :msg :type :str}]}}
+   :claxon/handlers {{:op "PING"} (fn [_ conn] (i/snd conn "PONG"))}})
