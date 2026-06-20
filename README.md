@@ -1,17 +1,20 @@
-# claxon
+# claxon [![](https://github.com/lispyclouds/claxon/workflows/Tests/badge.svg)](https://github.com/lispyclouds/claxon/actions?query=workflow%3ATests)
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg?style=flat)](https://choosealicense.com/licenses/mit/)
+[![bb compatible](https://raw.githubusercontent.com/babashka/babashka/master/logo/badge.svg)](https://book.babashka.org#badges)
 
 A minimal, pure-Clojure, data-driven [NATS](https://nats.io) client.
 
-## Philosophy
+## Rationale
 
 Most Clojure NATS clients are thin wrappers around the official Java SDK
 (`jnats`). That's a perfectly reasonable choice, but it comes with a JVM tax:
 you get jnats' threading model, its option-builder classes, and a hard
-dependency on a full JVM — which means no Babashka.
+dependency on a full JVM, which means no Babashka.
 
 claxon takes the other path. The [NATS client protocol](https://docs.nats.io/reference/reference-protocols/nats-protocol)
-is a small, text-based, line-oriented protocol — it doesn't need a 10MB Java
-SDK to speak it. claxon implements the protocol directly against a plain
+is a small, text-based, line-oriented protocol.
+claxon implements the protocol directly against a plain
 `java.net.Socket`, using nothing but Clojure data to describe the wire format.
 The result is:
 
@@ -19,7 +22,7 @@ The result is:
   embedded in a larger bb-based tool, with no AOT compilation and no native
   dependencies beyond the JVM/GraalVM that bb already ships.
 - **Small and inspectable.** The entire protocol surface is described as data
-  in one map (`claxon.conf/defaults`'s `:claxon/frame-shapes`) — ops, their
+  in one map (`claxon.conf/defaults`'s `:claxon/frame-shapes`) ops, their
   arguments, and their payloads. Reading and writing frames are both generic
   interpreters over that data, not one function per operation.
 - **Lightweight.** No dependency on `jnats`. The only third-party dependency
@@ -30,25 +33,20 @@ The result is:
   subscribing, and handling messages are all just `assoc`-able data — no
   builder classes, no checked exceptions to catch.
 
-claxon is deliberately a *protocol* client, not a full-featured NATS SDK. It
-doesn't try to be a drop-in replacement for jnats' surface area — see
+claxon is deliberately a _protocol_ client, not a full-featured NATS SDK. It
+doesn't try to be a drop-in replacement for jnats' surface area, see
 [Roadmap](#roadmap) for what's intentionally left out for now.
 
 ## Comparison to other Clojure NATS clients
 
-| | claxon | [clj-nats](https://github.com/cjohansen/clj-nats) | [monkey-projects/nats](https://github.com/monkey-projects/nats) | [clj-nats (thunknyc)](https://github.com/thunknyc/clj-nats) |
-|---|---|---|---|---|
-| Underlying impl | Pure Clojure, raw sockets | Wraps `jnats` (Java SDK) | Wraps `jnats` | Wraps `jnats` |
-| Babashka compatible | **Yes** | No | No | No |
-| Dependencies | JSON lib only | `jnats` + its transitive deps | `jnats` | `jnats` |
-| Protocol description | Data-driven (one map of frame shapes) | Delegates to SDK internals | Delegates to SDK internals | Delegates to SDK internals |
-| Scope | Core pub/sub protocol | PubSub, JetStream, KV, object store | PubSub, error listeners | PubSub, request/reply |
+|                      | claxon                                | [clj-nats](https://github.com/cjohansen/clj-nats) | [monkey-projects/nats](https://github.com/monkey-projects/nats) | [clj-nats (thunknyc)](https://github.com/thunknyc/clj-nats) |
+| -------------------- | ------------------------------------- | ------------------------------------------------- | --------------------------------------------------------------- | ----------------------------------------------------------- |
+| Underlying impl      | Pure Clojure, raw sockets             | Wraps `jnats` (Java SDK)                          | Wraps `jnats`                                                   | Wraps `jnats`                                               |
+| Babashka compatible  | **Yes**                               | No                                                | No                                                              | No                                                          |
+| Dependencies         | JSON lib only                         | `jnats` + its transitive deps                     | `jnats`                                                         | `jnats`                                                     |
+| Protocol description | Data-driven (one map of frame shapes) | Delegates to SDK internals                        | Delegates to SDK internals                                      | Delegates to SDK internals                                  |
+| Scope                | Core pub/sub protocol                 | PubSub, JetStream, KV, object store               | PubSub, error listeners                                         | PubSub, request/reply                                       |
 
-The jnats-based clients are mature and full-featured — if you need JetStream,
-key/value buckets, or object store today and you're already on a regular JVM,
-they're the better choice. claxon exists for the case those clients structurally
-can't cover: running inside Babashka, or anywhere you want NATS connectivity
-without pulling in a full Java messaging SDK.
 
 ## Roadmap
 
@@ -57,8 +55,8 @@ The following are **not yet implemented** but planned:
 - **Authentication** beyond what's already parseable from a `nats://` URL
   (user/password, token). No TLS, no NKey/JWT signing of the `INFO` nonce yet.
 - **WebSocket transport.** Only raw TCP sockets are supported today.
-- JetStream, key/value, and object store are out of scope for now — claxon
-  focuses on core pub/sub.
+- JetStream, key/value, and object store are doable with the current state,
+  may have some abstractions later.
 
 ## Installation
 
@@ -72,7 +70,7 @@ is implementation detail you shouldn't need to call directly.
 ### `(connect)` / `(connect opts)`
 
 Opens a connection to a NATS server and performs the `INFO`/`CONNECT`
-handshake. Returns a `conn` map — pass this to every other function.
+handshake. Returns a `conn` map, pass this to every other function.
 
 ```clojure
 (require '[claxon.client :as nats])
@@ -80,18 +78,18 @@ handshake. Returns a `conn` map — pass this to every other function.
 (def conn (nats/connect))
 ;; or, with options:
 (def conn (nats/connect {:claxon/urls ["nats://localhost:4222"]
-                          :claxon/timeout-ms 2000}))
+                         :claxon/timeout-ms 2000}))
 ```
 
 `opts` is merged over `claxon.conf/defaults`. The keys you'll commonly care about:
 
-| key | default | meaning |
-|---|---|---|
-| `:claxon/urls` | `["nats://localhost:4222"]` | Candidate server URLs, tried in random order until one connects. |
-| `:claxon/timeout-ms` | `2000` | Socket connect timeout per URL. |
-| `:claxon/handlers` | a default `PING`→`PONG` responder | Map of `{matcher fn}` handlers registered automatically on connect. |
-| `:claxon/executor` | a virtual-thread-per-task executor | Executor used to run the background frame-reading loop. |
-| `:claxon/frame-shapes` | the full NATS op table | The data-driven protocol description. You generally won't override this. |
+| key                    | default                            | meaning                                                                  |
+| ---------------------- | ---------------------------------- | ------------------------------------------------------------------------ |
+| `:claxon/urls`         | `["nats://localhost:4222"]`        | Candidate server URLs, tried in random order until one connects.         |
+| `:claxon/timeout-ms`   | `2000`                             | Socket connect timeout per URL.                                          |
+| `:claxon/handlers`     | a default `PING`→`PONG` responder  | Map of `{matcher fn}` handlers registered automatically on connect.      |
+| `:claxon/executor`     | a virtual-thread-per-task executor | Executor used to run the background frame-reading loop.                  |
+| `:claxon/frame-shapes` | the full NATS op table             | The data-driven protocol description. You generally won't override this. |
 
 Any other key you pass (e.g. `:user`, `:pass`, `:name`) is forwarded as part of
 the JSON `CONNECT` payload sent to the server.
@@ -135,7 +133,7 @@ Registers a callback for incoming frames. `matcher` is `{:op ... :args ...}`;
   {:op "MSG" :args {:subject "greetings"}})
 ```
 
-The handler receives `(frame conn)` — the parsed frame and the connection it
+The handler receives `(frame conn)` the parsed frame and the connection it
 arrived on. Handlers run on the background reader thread; keep them fast or
 hand off work yourself (e.g. via `future` or a queue).
 
@@ -197,9 +195,6 @@ shuts down its executor, and closes the socket.
 (Thread/sleep 100)
 (nats/close conn)
 ```
-
-Run it with `bb script.clj` — no `lein`, no `clj`, no AOT step, no `jnats` jar
-on the classpath.
 
 ## License
 
