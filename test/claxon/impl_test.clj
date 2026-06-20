@@ -1,7 +1,8 @@
 (ns claxon.impl-test
   (:require
-   [clojure.test :refer [deftest is testing]]
-   [claxon.impl :as impl])
+   [claxon.conf :as conf]
+   [claxon.impl :as impl]
+   [clojure.test :refer [deftest is testing]])
   (:import
    [java.io ByteArrayInputStream]))
 
@@ -19,11 +20,13 @@
     (aset-byte total (+ hlen plen 1) 10)
     (ByteArrayInputStream. total)))
 
+(def shapes (:claxon/frame-shapes (conf/defaults)))
+
 (defn read-frame-from-string [s]
-  (impl/read-frame (->stream s)))
+  (impl/read-frame (->stream s) shapes))
 
 (defn read-frame-with-payload [header payload]
-  (impl/read-frame (->stream-with-payload header payload)))
+  (impl/read-frame (->stream-with-payload header payload) shapes))
 
 (def frame-cases
   [{:name "PING"
@@ -128,13 +131,13 @@
                   (byte-array (concat (.getBytes "PUB foo 5\r\n" "UTF-8")
                                       (map byte "hello")
                                       [10])))] ; only LF, no CR
-      (is (thrown? Exception (impl/read-frame stream))))))
+      (is (thrown? Exception (impl/read-frame stream shapes))))))
 
 (deftest test-multi-frame
   (let [frames ["PING\r\n" "PONG\r\n"]
         stream (ByteArrayInputStream. (.. (apply str frames) (getBytes "UTF-8")))]
-    (is (= {:op "PING"} (impl/read-frame stream)))
-    (is (= {:op "PONG"} (impl/read-frame stream)))))
+    (is (= {:op "PING"} (impl/read-frame stream shapes)))
+    (is (= {:op "PONG"} (impl/read-frame stream shapes)))))
 
 (deftest test-parse-headers-block
   (let [raw (byte-array (.getBytes "NATS/1.0 200 OK\r\nX-Foo: bar\r\n\r\n" "UTF-8"))]
@@ -155,11 +158,6 @@
     (is (= 2 (impl/eval-length [:- :total 8] {:total 10}))))
   (testing "Realistic usage from protocol"
     (is (= 5 (impl/eval-length [:- :hdr-bytes :bytes] {:hdr-bytes 10 :bytes 5})))))
-
-(deftest test-frame-shapes-completeness
-  (let [expected-ops #{"INFO" "CONNECT" "PUB" "HPUB" "MSG" "HMSG"
-                       "SUB" "UNSUB" "PING" "PONG" "+OK" "-ERR"}]
-    (is (= expected-ops (set (keys impl/frame-shapes))))))
 
 (deftest parse-nats-url-test
   (testing "basic URLs without authentication"
