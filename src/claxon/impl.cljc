@@ -13,8 +13,9 @@
    [java.util.concurrent ExecutorService]))
 
 (def read-json #?(:bb json/parse-string :clj json/read-str))
-
 (def write-json #?(:bb json/generate-string :clj json/write-str))
+(defonce handler-ids (atom 0))
+(defonce handlers (atom {}))
 
 (defn parse-nats-url
   [url]
@@ -231,13 +232,20 @@
         args (assoc :args args)
         payloads (merge payloads)))))
 
+(defn submap?
+  [super sub]
+  (every? (fn [[k v]]
+            (and (contains? super k) (= v (get super k))))
+          sub))
+
 (defn start
-  [in ^ExecutorService executor]
+  [{:keys [reader ^ExecutorService executor]}]
   (.submit executor
            ^Runnable
            #(loop []
-              (let [frame (read-frame in)]
-                (println frame))
+              (let [frame (read-frame reader)]
+                (prn @handlers)
+                (prn frame))
               (recur))))
 
 (comment
