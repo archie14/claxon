@@ -9,7 +9,8 @@
 (def read-json #?(:bb json/parse-string :clj json/read-str))
 (def write-json #?(:bb json/generate-string :clj json/write-str))
 (defonce conn-ids (atom 0))
-(defonce handlers (atom [])) ; TODO: Optimise better than O(n)
+(defonce handler-ids (atom 0))
+(defonce handlers (atom [])) ; TODO: Optimise better than O(n), inverted lookup via matches
 
 (defn parse-nats-url
   [url]

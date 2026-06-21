@@ -11,11 +11,18 @@
 
 (defn add-handler
   [conn handler {:keys [op args]}]
-  (swap! ic/handlers
-         conj
-         {:conn (:id conn)
-          :fn handler
-          :matches {:op op :args args}}))
+  (let [id (swap! ic/handler-ids inc)]
+    (swap! ic/handlers
+           conj
+           {:id id
+            :conn (:id conn)
+            :fn handler
+            :matches {:op op :args args}})
+    id))
+
+(defn remove-handler
+  [id]
+  (swap! ic/handlers (fn [hs] (remove #(= id (:id %)) hs))))
 
 (defn invoke
   [conn {:keys [op args payloads]}]

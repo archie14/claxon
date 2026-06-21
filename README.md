@@ -1,7 +1,8 @@
-# claxon [![](https://github.com/lispyclouds/claxon/workflows/Tests/badge.svg)](https://github.com/lispyclouds/claxon/actions?query=workflow%3ATests)
+# claxon
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg?style=flat)](https://choosealicense.com/licenses/mit/)
 [![bb compatible](https://raw.githubusercontent.com/babashka/babashka/master/logo/badge.svg)](https://book.babashka.org#badges)
+[![](https://github.com/lispyclouds/claxon/workflows/Tests/badge.svg)](https://github.com/lispyclouds/claxon/actions?query=workflow%3ATests)
 
 A minimal, pure-Clojure, data-driven [NATS](https://nats.io) client.
 
@@ -40,23 +41,26 @@ doesn't try to be a drop-in replacement for nats.java's surface area, see
 
 ## Comparison to other Clojure NATS clients
 
-|                      | claxon                                | [clj-nats](https://github.com/cjohansen/clj-nats) | [monkey-projects/nats](https://github.com/monkey-projects/nats) | [clj-nats (thunknyc)](https://github.com/thunknyc/clj-nats) |
-| -------------------- | ------------------------------------- | ------------------------------------------------- | --------------------------------------------------------------- | ----------------------------------------------------------- |
-| Underlying impl      | Pure Clojure, raw sockets             | Wraps `nats.java` (Java SDK)                      | Wraps `nats.java`                                               | Wraps `nats.java`                                           |
-| Babashka compatible  | **Yes**                               | No                                                | No                                                              | No                                                          |
-| Dependencies         | JSON lib only                         | `nats.java` + its transitive deps                 | `nats.java`                                                     | `nats.java`                                                 |
-| Protocol description | Data-driven (one map of frame shapes) | Delegates to SDK internals                        | Delegates to SDK internals                                      | Delegates to SDK internals                                  |
-| Scope                | Core pub/sub protocol                 | PubSub, JetStream, KV, object store               | PubSub, error listeners                                         | PubSub, request/reply                                       |
+|                           | claxon                       | [clj-nats](https://github.com/cjohansen/clj-nats) | [monkey-projects/nats](https://github.com/monkey-projects/nats) |
+| ------------------------- | ---------------------------- | ------------------------------------------------- | --------------------------------------------------------------- |
+| Underlying impl           | Pure Clojure, raw sockets    | Wraps `nats.java`                                 | Wraps `nats.java`                                               |
+| Babashka compatible       | **Yes**                      | No                                                | No                                                              |
+| User modifiable protocols | **Yes**                      | No                                                | No                                                              |
+| Dependencies              | data.json on JVM, none on bb | `nats.java` + its transitive deps                 | `nats.java`                                                     |
+| Protocol description      | Data-driven                  | Delegated to nats.java                            | Delegated to nats.java                                          |
 
 ## Roadmap
+
+Current status: Maturing
 
 The following are **not yet implemented** but planned:
 
 - **Authentication** beyond what's already parseable from a `nats://` URL
   (user/password, token). No TLS, no NKey/JWT signing of the `INFO` nonce yet.
 - **WebSocket transport.** Only raw TCP sockets are supported as of now.
-- JetStream, key/value, and object store are doable with the current state,
-  may have some abstractions later.
+- **Editor integration** Since the protocol is spec driven, clj-kondo/clojure-lsp
+  can be hooked in to provide real time feedback on function calls.
+- Maybe JetStream abstractions.
 
 ## Installation
 
@@ -83,13 +87,13 @@ handshake. Returns a `conn` map, pass this to every other function.
 
 `opts` is merged over `claxon.conf/defaults`. The keys you'll commonly care about:
 
-| key                    | default                            | meaning                                                                  |
-| ---------------------- | ---------------------------------- | ------------------------------------------------------------------------ |
-| `:claxon/urls`         | `["nats://localhost:4222"]`        | Candidate server URLs, tried in random order until one connects.         |
-| `:claxon/timeout-ms`   | `2000`                             | Socket connect timeout per URL.                                          |
-| `:claxon/handlers`     | a default `PING`→`PONG` responder  | Map of `{matcher fn}` handlers registered automatically on connect.      |
-| `:claxon/executor`     | a virtual-thread-per-task executor | Executor used to run the background frame-reading loop.                  |
-| `:claxon/frame-shapes` | the full NATS op table             | The data-driven protocol description. You generally won't override this. |
+| key                    | default                            | meaning                                                                                                      |
+| ---------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `:claxon/urls`         | `["nats://localhost:4222"]`        | Candidate server URLs, tried in random order until one connects.                                             |
+| `:claxon/timeout-ms`   | `2000`                             | Socket connect timeout per URL.                                                                              |
+| `:claxon/handlers`     | a default `PING`→`PONG` responder  | Map of `{matcher fn}` handlers registered automatically on connect.                                          |
+| `:claxon/executor`     | a virtual-thread-per-task executor | Executor used to run the background frame-reading loop. Assumes JDK 21+ by default. Change this accordingly. |
+| `:claxon/frame-shapes` | the full NATS op table             | The data-driven protocol description. You generally won't override this.                                     |
 
 Any other key you pass (e.g. `:user`, `:pass`, `:name`) is forwarded as part of
 the JSON `CONNECT` payload sent to the server.
@@ -121,9 +125,9 @@ yourself.
 
 ### `(add-handler conn handler matcher)`
 
-Registers a callback for incoming frames. `matcher` is `{:op ... :args ...}`;
+Registers a callback for incoming frames isolated to the connection. `matcher` is `{:op ... :args ...}`;
 `:args` is matched as a submap, so you can match loosely (e.g. only on
-`:subject`) or leave it out to match any args.
+`:subject`) or leave it out to match any args. Returns the handler id.
 
 ```clojure
 (nats/add-handler conn
@@ -136,6 +140,10 @@ Registers a callback for incoming frames. `matcher` is `{:op ... :args ...}`;
 The handler receives `(frame conn)` the parsed frame and the connection it
 arrived on. Handlers run on the background reader thread; keep them fast or
 hand off work yourself (e.g. via `future` or a queue).
+
+### `(remove-handler id)`
+
+Removes/Unregisters a handler by id. no-op if not found.
 
 ### `(close conn)`
 
@@ -191,35 +199,30 @@ shuts down its executor, and closes the socket.
 claxon has no JetStream- or KV-specific functions. It doesn't need any: both
 are implemented on the NATS server as regular subjects (`$JS.API.*` for
 management, `$KV.<bucket>.<key>` for KV) that you talk to with ordinary
-`PUB`/`SUB`/`HPUB` — the same four functions used everywhere else in this
+`PUB`/`SUB`/`HPUB`: the same four functions used everywhere else in this
 README. The examples below show that explicitly, including the request/reply
 pattern (subscribe to an inbox, publish with `:reply-to` set to it) that
 claxon doesn't wrap for you.
 
-A small helper makes the request/reply dance less repetitive — this is
+A small helper makes the request/reply dance less repetitive: this is
 something you'd write once in your own code, not something claxon ships:
 
 ```clojure
 (defn request
-  "Send `body` to `subject` and block (up to `timeout-ms`) for a single reply.
-   Note: claxon doesn't expose a way to remove a single handler once added
-   (only `close` clears all of them), so each call to `request` leaves one
-   handler registered for the lifetime of the connection. Fine for a few
-   calls or a script; for a long-lived process doing many requests, you'd
-   want to either reuse one inbox + handler for all requests, or extend
-   claxon with a `remove-handler`."
+  "Send `body` to `subject` and block (up to `timeout-ms`) for a single reply."
   [conn subject body timeout-ms]
   (let [inbox (str "_INBOX." (random-uuid))
-        p (promise)]
-    (nats/add-handler conn
-      (fn [frame _conn] (deliver p frame))
-      {:op "MSG" :args {:subject inbox}})
-    (nats/invoke conn {:op "SUB" :args {:subject inbox :sid inbox}})
-    (nats/invoke conn {:op "PUB"
-                       :args {:subject subject :reply-to inbox}
-                       :payloads {:body body}})
+        p (promise)
+        hid (add-handler conn
+                         (fn [frame _conn] (deliver p frame))
+                         {:op "MSG" :args {:subject inbox}})]
+    (invoke conn {:op "SUB" :args {:subject inbox :sid inbox}})
+    (invoke conn {:op "PUB"
+                  :args {:subject subject :reply-to inbox}
+                  :payloads {:body body}})
     (let [frame (deref p timeout-ms :timeout)]
-      (nats/invoke conn {:op "UNSUB" :args {:sid inbox}})
+      (remove-handler hid)
+      (invoke conn {:op "UNSUB" :args {:sid inbox}})
       frame)))
 ```
 
@@ -234,13 +237,13 @@ something you'd write once in your own code, not something claxon ships:
 
 (request conn "$JS.API.CONSUMER.DURABLE.CREATE.ORDERS.PULLER"
          (json/write-str {"durable_name" "PULLER"
-                           "ack_policy" "explicit"})
+                          "ack_policy" "explicit"})
          2000)
 ```
 
 #### Publishing into the stream
 
-Publishing to a JetStream-backed subject is just a `PUB` — the server
+Publishing to a JetStream-backed subject is just a `PUB`: the server
 intercepts it because the subject matches a stream:
 
 ```clojure
@@ -250,7 +253,7 @@ intercepts it because the subject matches a stream:
 #### Pulling and acking from the consumer
 
 A pull request is a `request` to `$JS.API.CONSUMER.MSG.NEXT.<stream>.<consumer>`;
-the reply's own `:reply-to` is the ack subject — publishing an empty body there
+the reply's own `:reply-to` is the ack subject: publishing an empty body there
 acks the message:
 
 ```clojure
@@ -295,7 +298,7 @@ A KV bucket is just a stream named `KV_<bucket>` whose subjects look like
                               :body nil}})
 ```
 
-None of this requires claxon to know what JetStream or KV are — they're just
+None of this requires claxon to know what JetStream or KV are: they're just
 subjects, headers, and request/reply, all of which the core protocol already
 covers.
 
@@ -306,15 +309,15 @@ different guarantees. Picking the right one matters if you're replacing a
 broker like RabbitMQ that you expect to hold messages durably and retry
 failed work.
 
-#### Queue groups — load balancing, no durability
+#### Queue groups: load balancing, no durability
 
 A queue group is a label on a `SUB`: the server picks one subscriber in the
 group per message instead of fanning out to all of them. There's no storage
-involved — if nobody's subscribed when a message is published, it's gone,
+involved: if nobody's subscribed when a message is published, it's gone,
 same as any other core NATS subject.
 
 ```clojure
-;; start two "workers" in the same queue group — each PUB to "jobs" goes to
+;; start two "workers" in the same queue group: each PUB to "jobs" goes to
 ;; exactly one of them, round-robin, not both
 (doseq [worker-id ["worker-1" "worker-2"]]
   (nats/add-handler conn
@@ -331,9 +334,9 @@ same as any other core NATS subject.
 
 This is the cheap option: good for load-balancing fire-and-forget work where
 losing a message on a crash is acceptable. It is **not** a RabbitMQ
-replacement on its own — there's no persistence, no ack, no redelivery.
+replacement on its own: there's no persistence, no ack, no redelivery.
 
-#### JetStream work-queue stream — the actual RabbitMQ-equivalent
+#### JetStream work-queue stream: the actual RabbitMQ-equivalent
 
 For RabbitMQ-style guarantees (messages survive until a worker successfully
 processes them, failed work gets retried) you want a JetStream stream with
@@ -346,8 +349,8 @@ section above.
 ;; consumer and removed from the stream as soon as it's acked
 (request conn "$JS.API.STREAM.CREATE.JOBS"
          (json/write-str {"name" "JOBS"
-                           "subjects" ["jobs.>"]
-                           "retention" "workqueue"})
+                          "subjects" ["jobs.>"]
+                          "retention" "workqueue"})
          2000)
 
 ;; a single durable consumer, shared by every worker process —
@@ -355,8 +358,8 @@ section above.
 ;; so this is how you fan work out across many workers, not separate consumers
 (request conn "$JS.API.CONSUMER.DURABLE.CREATE.JOBS.WORKERS"
          (json/write-str {"durable_name" "WORKERS"
-                           "ack_policy" "explicit"
-                           "ack_wait" 30000000000}) ; 30s, in nanoseconds
+                          "ack_policy" "explicit"
+                          "ack_wait" 30000000000}) ; 30s, in nanoseconds
          2000)
 ```
 
@@ -377,7 +380,7 @@ Each worker pulls one message at a time, processes it, and acks or nacks:
               (catch Exception _
                 ;; ask the server to redeliver this message
                 (nats/invoke conn {:op "PUB" :args {:subject reply-to}
-                                    :payloads {:body "-NAK"}}))))))
+                                   :payloads {:body "-NAK"}}))))))
       (recur))))
 
 (run-worker conn "worker-1")
@@ -391,12 +394,12 @@ A few things to note, since this is what makes it different from the queue
 group above:
 
 - Unacked messages are automatically redelivered after `ack_wait` (30s here),
-  to whichever worker pulls next — no message is lost if a worker dies
+  to whichever worker pulls next: no message is lost if a worker dies
   mid-job.
 - A worker can actively reject a message (`-NAK`) to put it back for retry
   sooner than the ack-wait timeout, as shown in the `catch` above.
 - Once a message is acked, `workqueue` retention deletes it from the
-  stream — it's a true queue, not a log you replay.
+  stream: it's a true queue, not a log you replay.
 - If you need a dead-letter queue, set `"max_deliver"` on the consumer config
   and watch `$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.JOBS.WORKERS` for
   messages that exhausted their retries.

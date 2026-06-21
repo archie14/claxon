@@ -1,51 +1,17 @@
 (ns claxon.impl.write-test
   (:require
-   [clojure.test :refer [deftest testing is]]
+   [claxon.conf :as conf]
+   [claxon.impl.read :as ir]
    [claxon.impl.write :as iw]
-   [claxon.impl.read :as ir])
+   [clojure.test :refer [deftest is testing]])
   (:import
-   [java.io ByteArrayOutputStream ByteArrayInputStream]))
+   [java.io ByteArrayInputStream ByteArrayOutputStream]))
 
 ;; ---------------------------------------------------------------------------
 ;; helpers
 ;; ---------------------------------------------------------------------------
 
-(def default-shapes
-  "Mirrors claxon.conf/defaults' :claxon/frame-shapes closely enough to
-   exercise snd end-to-end for every operation the client actually sends."
-  {"INFO" {:args [{:name :info :type :json}]}
-   "CONNECT" {:args [{:name :opts :type :json}]}
-   "PUB" {:args [{:name :subject :type :str}
-                 {:name :reply-to :type :str :optional true}
-                 {:name :bytes :type :int}]
-          :payloads [{:name :body :type :bytes :length :bytes}]}
-   "HPUB" {:args [{:name :subject :type :str}
-                  {:name :reply-to :type :str :optional true}
-                  {:name :hdr-bytes :type :int}
-                  {:name :bytes :type :int}]
-           :payloads [{:name :headers :type :headers :length :hdr-bytes}
-                      {:name :body :type :bytes :length [:- :bytes :hdr-bytes]}]}
-   "MSG" {:args [{:name :subject :type :str}
-                 {:name :sid :type :str}
-                 {:name :reply-to :type :str :optional true}
-                 {:name :bytes :type :int}]
-          :payloads [{:name :body :type :bytes :length :bytes}]}
-   "HMSG" {:args [{:name :subject :type :str}
-                  {:name :sid :type :str}
-                  {:name :reply-to :type :str :optional true}
-                  {:name :hdr-bytes :type :int}
-                  {:name :bytes :type :int}]
-           :payloads [{:name :headers :type :headers :length :hdr-bytes}
-                      {:name :body :type :bytes :length [:- :bytes :hdr-bytes]}]}
-   "SUB" {:args [{:name :subject :type :str}
-                 {:name :queue-group :type :str :optional true}
-                 {:name :sid :type :str}]}
-   "UNSUB" {:args [{:name :sid :type :str}
-                   {:name :max-msgs :type :int :optional true}]}
-   "PING" {}
-   "PONG" {}
-   "+OK" {}
-   "-ERR" {:args [{:name :msg :type :str}]}})
+(def default-shapes (:claxon/frame-shapes (conf/defaults)))
 
 (defn capture
   "Build a fake conn backed by an in-memory OutputStream and invoke
