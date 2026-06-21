@@ -41,7 +41,7 @@ doesn't try to be a drop-in replacement for nats.java's surface area, see
 
 ## Comparison to other Clojure NATS clients
 
-|                           | claxon                       | [clj-nats](https://github.com/cjohansen/clj-nats) | [monkey-projects/nats](https://github.com/monkey-projects/nats) |
+| aspect                    | claxon                       | [clj-nats](https://github.com/cjohansen/clj-nats) | [monkey-projects/nats](https://github.com/monkey-projects/nats) |
 | ------------------------- | ---------------------------- | ------------------------------------------------- | --------------------------------------------------------------- |
 | Underlying impl           | Pure Clojure, raw sockets    | Wraps `nats.java`                                 | Wraps `nats.java`                                               |
 | Babashka compatible       | **Yes**                      | No                                                | No                                                              |
@@ -56,7 +56,7 @@ Current status: Maturing
 The following are **not yet implemented** but planned:
 
 - **Authentication** beyond what's already parseable from a `nats://` URL
-  (user/password, token). No TLS, no NKey/JWT signing of the `INFO` nonce yet.
+  (user/password, token). No NKey/JWT signing of the `INFO` nonce yet.
 - **WebSocket transport.** Only raw TCP sockets are supported as of now.
 - **Editor integration** Since the protocol is spec driven, clj-kondo/clojure-lsp
   can be hooked in to provide real time feedback on function calls.
@@ -87,13 +87,14 @@ handshake. Returns a `conn` map, pass this to every other function.
 
 `opts` is merged over `claxon.conf/defaults`. The keys you'll commonly care about:
 
-| key                    | default                            | meaning                                                                                                      |
-| ---------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `:claxon/urls`         | `["nats://localhost:4222"]`        | Candidate server URLs, tried in random order until one connects.                                             |
-| `:claxon/timeout-ms`   | `2000`                             | Socket connect timeout per URL.                                                                              |
-| `:claxon/handlers`     | a default `PING`→`PONG` responder  | Map of `{matcher fn}` handlers registered automatically on connect.                                          |
-| `:claxon/executor`     | a virtual-thread-per-task executor | Executor used to run the background frame-reading loop. Assumes JDK 21+ by default. Change this accordingly. |
-| `:claxon/frame-shapes` | the full NATS op table             | The data-driven protocol description. You generally won't override this.                                     |
+| key                    | default                            | details                                                                                    |
+| ---------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------ |
+| `:claxon/urls`         | `["nats://localhost:4222"]`        | Candidate server URLs, tried in random order until one connects.                           |
+| `:claxon/timeout-ms`   | `2000`                             | Socket connect timeout per URL.                                                            |
+| `:claxon/handlers`     | a default `PING`→`PONG` responder  | Map of `{matcher fn}` handlers registered automatically on connect.                        |
+| `:claxon/executor`     | a virtual-thread-per-task executor | Executor used to run the background frame-reading loop. Assumes JDK 21+ by default.        |
+| `:claxon/verify-tls`   | true                               | When tls is true or the server requires it, set this to false to disable SSL verification. |
+| `:claxon/frame-shapes` | the full NATS op table             | The data-driven protocol description. You generally won't override this.                   |
 
 Any other key you pass (e.g. `:user`, `:pass`, `:name`) is forwarded as part of
 the JSON `CONNECT` payload sent to the server.

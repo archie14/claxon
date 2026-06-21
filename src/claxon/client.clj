@@ -3,10 +3,11 @@
    [claxon.conf :as conf]
    [claxon.impl.common :as ic]
    [claxon.impl.read :as ir]
+   [claxon.impl.sock :as sock]
    [claxon.impl.write :as iw])
   (:import
    [java.io BufferedInputStream BufferedOutputStream]
-   [java.net InetSocketAddress Socket]
+   [java.net Socket]
    [java.util.concurrent ExecutorService]))
 
 (defn add-handler
@@ -33,34 +34,66 @@
    (connect {}))
   ([opts]
    (let [opts (merge (conf/defaults) opts)
-         {:keys [claxon/urls
+         {:keys [tls
+                 claxon/urls
                  claxon/timeout-ms
                  claxon/executor
                  claxon/handlers
+                 claxon/verify-tls
                  claxon/frame-shapes]} opts
-         ^Socket sock (->> urls
-                           (map ic/parse-nats-url)
-                           (shuffle)
-                           (some (fn [{:keys [^String host ^Integer port]}]
-                                   (try
-                                     (doto (Socket.)
-                                       (.connect (InetSocketAddress. host port)
-                                                 timeout-ms))
-                                     (catch Exception _ false)))))
-         _ (when-not sock
+         {:keys [host port ^Socket socket]}
+         (->> urls
+              (map ic/parse-nats-url)
+              (shuffle)
+              (some (fn [{:keys [host port]}]
+                      (try
+                        (let [socket (sock/connect {:host host
+                                                    :port port
+                                                    :tls tls
+                                                    :verify verify-tls
+                                                    :timeout timeout-ms})]
+                          {:socket socket
+                           :host host
+                           :port port})
+                        (catch Exception _ false)))))
+         _ (when-not socket
              (throw (ex-info "Cannot connect to any of the urls" {:urls urls})))
-         in (-> sock
+         in (-> socket
                 .getInputStream
                 BufferedInputStream.)
-         out (-> sock
+         out (-> socket
                  .getOutputStream
                  BufferedOutputStream.)
          conn {:id (swap! ic/conn-ids inc)
-               :socket sock
+               :socket socket
                :in in
                :out out
                :executor executor
-               :frame-shapes frame-shapes}]
+               :frame-shapes frame-shapes}
+         info (-> in
+                  (ir/read-frame frame-shapes)
+                  :args
+                  :info)
+         conn (if (and (get info "tls_available")
+                       (get info "tls_required"))
+                (if tls
+                  conn
+                  (do
+                    (Socket/.close (:socket conn))
+                    (let [new-sock (sock/connect {:host host
+                                                  :port port
+                                                  :tls true
+                                                  :verify verify-tls
+                                                  :timeout timeout-ms})]
+                      (assoc conn
+                             :socket new-sock
+                             :in (-> new-sock
+                                     .getInputStream
+                                     BufferedInputStream.)
+                             :out (-> new-sock
+                                      .getOutputStream
+                                      BufferedOutputStream.)))))
+                conn)]
      (run! (fn [[{:keys [op args]} f]]
              (add-handler conn f {:op op :args args}))
            handlers)
@@ -72,15 +105,14 @@
                             :claxon/timeout-ms
                             :claxon/executor
                             :claxon/handlers
+                            :claxon/verify-tls
                             :claxon/frame-shapes)}
              nil)
      conn)))
 
 (defn close
-  [{:keys [socket executor id in out]}]
+  [{:keys [socket executor id]}]
   (swap! ic/handlers (fn [h] (vec (remove #(= (:conn %) id) h))))
-  (BufferedInputStream/.close in)
-  (BufferedOutputStream/.close out)
   (ExecutorService/.shutdown executor)
   (Socket/.close socket))
 

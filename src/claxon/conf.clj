@@ -10,6 +10,7 @@
    :claxon/timeout-ms 2000
    :claxon/executor (Executors/newVirtualThreadPerTaskExecutor)
    :claxon/handlers {{:op "PING"} (fn [_ conn] (iw/snd conn "PONG" nil nil))}
+   :claxon/verify-tls true
    :claxon/frame-shapes {"INFO" {:args [{:name :info :type :json}]}
                          "CONNECT" {:args [{:name :opts :type :json}]}
                          "PUB" {:args [{:name :subject :type :str}
