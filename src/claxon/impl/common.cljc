@@ -50,7 +50,8 @@
   (->> handlers
        (filter (fn [handler]
                  (let [{:keys [op args]} (:matches handler)]
-                   (and (= op (:op frame))
+                   (and (= (:id conn) (:conn handler))
+                        (= op (:op frame))
                         (submap? (:args frame) args)))))
        ;; TODO: Invoke all concurrently on the executor, making sure the writer is synchronised
        (run! #(try

@@ -80,56 +80,132 @@
 ;; ---------------------------------------------------------------------------
 ;; dispatch
 ;; ---------------------------------------------------------------------------
+;;
+;; dispatch filters handlers on three things: matching :conn (the handler
+;; only fires for the connection it was registered against), matching :op,
+;; and :args being a submap of the frame's :args. The tests below use
+;; realistic {:id ...} conn maps throughout (rather than a bare keyword or
+;; an empty handler map) specifically so the :conn check is genuinely
+;; exercised -- with conn as a bare keyword like :conn, (:id conn) is nil,
+;; and an omitted handler :conn is also nil, so a missing-on-purpose filter
+;; would still accidentally pass every test via nil=nil.
 
 (deftest dispatch-invokes-matching-handlers-only
-  (let [calls (atom [])
-        handlers [{:matches {:op "PING" :args nil}
+  (let [conn-a {:id "conn-a"}
+        calls (atom [])
+        handlers [{:conn "conn-a" :matches {:op "PING" :args nil}
                    :fn (fn [frame _conn] (swap! calls conj [:ping frame]))}
-                  {:matches {:op "MSG" :args nil}
+                  {:conn "conn-a" :matches {:op "MSG" :args nil}
                    :fn (fn [frame _conn] (swap! calls conj [:msg frame]))}]]
-    (ic/dispatch {:op "PING"} handlers :conn)
+    (ic/dispatch {:op "PING"} handlers conn-a)
     (is (= [[:ping {:op "PING"}]] @calls))))
 
 (deftest dispatch-runs-all-matching-handlers
   (testing "more than one handler can match the same frame; all run"
-    (let [calls (atom 0)
-          handlers [{:matches {:op "PING" :args nil}
+    (let [conn-a {:id "conn-a"}
+          calls (atom 0)
+          handlers [{:conn "conn-a" :matches {:op "PING" :args nil}
                      :fn (fn [_ _] (swap! calls inc))}
-                    {:matches {:op "PING" :args nil}
+                    {:conn "conn-a" :matches {:op "PING" :args nil}
                      :fn (fn [_ _] (swap! calls inc))}]]
-      (ic/dispatch {:op "PING"} handlers :conn)
+      (ic/dispatch {:op "PING"} handlers conn-a)
       (is (= 2 @calls)))))
 
 (deftest dispatch-matches-on-args-submap
   (testing "handlers can be filtered further by a submap of :args"
-    (let [calls (atom [])
-          handlers [{:matches {:op "MSG" :args {:subject "FOO"}}
+    (let [conn-a {:id "conn-a"}
+          calls (atom [])
+          handlers [{:conn "conn-a" :matches {:op "MSG" :args {:subject "FOO"}}
                      :fn (fn [frame _] (swap! calls conj frame))}]]
-      (ic/dispatch {:op "MSG" :args {:subject "FOO" :sid "1"}} handlers :conn)
-      (ic/dispatch {:op "MSG" :args {:subject "BAR" :sid "1"}} handlers :conn)
+      (ic/dispatch {:op "MSG" :args {:subject "FOO" :sid "1"}} handlers conn-a)
+      (ic/dispatch {:op "MSG" :args {:subject "BAR" :sid "1"}} handlers conn-a)
       (is (= 1 (count @calls)))
       (is (= "FOO" (get-in (first @calls) [:args :subject]))))))
 
 (deftest dispatch-no-matching-handlers-is-a-noop
-  (is (nil? (ic/dispatch {:op "PING"} [] :conn))))
+  (is (nil? (ic/dispatch {:op "PING"} [] {:id "conn-a"}))))
 
 (deftest dispatch-handler-exception-does-not-propagate
   (testing "an exception thrown by one handler does not stop dispatch or escape to the caller"
-    (let [calls (atom [])
-          handlers [{:matches {:op "PING" :args nil}
+    (let [conn-a {:id "conn-a"}
+          calls (atom [])
+          handlers [{:conn "conn-a" :matches {:op "PING" :args nil}
                      :fn (fn [_ _] (throw (ex-info "boom" {})))}
-                    {:matches {:op "PING" :args nil}
+                    {:conn "conn-a" :matches {:op "PING" :args nil}
                      :fn (fn [_ _] (swap! calls conj :ran))}]]
       (binding [*err* (java.io.StringWriter.)]
-        (is (nil? (ic/dispatch {:op "PING"} handlers :conn))))
+        (is (nil? (ic/dispatch {:op "PING"} handlers conn-a))))
       (is (= [:ran] @calls)))))
 
 (deftest dispatch-passes-conn-through-to-handler
-  (let [seen (atom nil)
-        handlers [{:matches {:op "PING" :args nil}
+  (let [conn-a {:id "conn-a" :extra :data}
+        seen (atom nil)
+        handlers [{:conn "conn-a" :matches {:op "PING" :args nil}
                    :fn (fn [_ conn] (reset! seen conn))}]]
-    (ic/dispatch {:op "PING"} handlers {:id 42})
-    (is (= {:id 42} @seen))))
+    (ic/dispatch {:op "PING"} handlers conn-a)
+    (is (= conn-a @seen))))
+
+;; --- connection isolation ---------------------------------------------------
+
+(deftest dispatch-ignores-handlers-registered-on-a-different-connection
+  (testing "a handler registered for conn-a never fires for frames dispatched
+            against conn-b, even when :op and :args both match"
+    (let [conn-b {:id "conn-b"}
+          calls (atom [])
+          handlers [{:conn "conn-a" :matches {:op "PING" :args nil}
+                     :fn (fn [_ conn] (swap! calls conj conn))}]]
+      (ic/dispatch {:op "PING"} handlers conn-b)
+      (is (= [] @calls)))))
+
+(deftest dispatch-only-fires-handler-for-its-own-connection
+  (testing "with two connections registering identical matchers, dispatching
+            against one connection only runs that connection's handler"
+    (let [conn-a {:id "conn-a"}
+          conn-b {:id "conn-b"}
+          calls-a (atom 0)
+          calls-b (atom 0)
+          handlers [{:conn "conn-a" :matches {:op "PING" :args nil}
+                     :fn (fn [_ _] (swap! calls-a inc))}
+                    {:conn "conn-b" :matches {:op "PING" :args nil}
+                     :fn (fn [_ _] (swap! calls-b inc))}]]
+      (ic/dispatch {:op "PING"} handlers conn-a)
+      (is (= 1 @calls-a))
+      (is (= 0 @calls-b))
+      (ic/dispatch {:op "PING"} handlers conn-b)
+      (is (= 1 @calls-a))
+      (is (= 1 @calls-b)))))
+
+(deftest dispatch-conn-id-mismatch-takes-priority-over-op-and-args-match
+  (testing "a wrong :conn excludes a handler even when both :op and :args
+            match exactly -- :conn is not just a tiebreaker, it's a hard filter"
+    (let [conn-b {:id "conn-b"}
+          calls (atom [])
+          handlers [{:conn "conn-a" :matches {:op "MSG" :args {:subject "FOO"}}
+                     :fn (fn [frame _] (swap! calls conj frame))}]]
+      (ic/dispatch {:op "MSG" :args {:subject "FOO" :sid "1"}} handlers conn-b)
+      (is (= [] @calls)))))
+
+(deftest dispatch-nil-conn-id-does-not-match-a-real-connection
+  (testing "a handler with no :conn set (nil) does not leak into dispatch
+            for a connection that actually has an :id -- nil should not be
+            treated as a wildcard"
+    (let [conn-a {:id "conn-a"}
+          calls (atom [])
+          handlers [{:matches {:op "PING" :args nil} ; no :conn key at all
+                     :fn (fn [_ _] (swap! calls conj :ran))}]]
+      (ic/dispatch {:op "PING"} handlers conn-a)
+      (is (= [] @calls)))))
+
+(deftest dispatch-nil-conn-id-on-both-sides-still-matches
+  (testing "the flip side of the above: if the connection itself has no :id
+            (nil) and the handler also has no :conn (nil), nil=nil so the
+            handler still matches -- this is the same coincidental case the
+            other tests deliberately avoid, named here so the boundary is explicit"
+    (let [calls (atom [])
+          handlers [{:matches {:op "PING" :args nil}
+                     :fn (fn [_ _] (swap! calls conj :ran))}]]
+      (ic/dispatch {:op "PING"} handlers {})
+      (is (= [:ran] @calls)))))
 
 ;; ---------------------------------------------------------------------------
 ;; read-json / write-json round trip (platform-dependent impl, behaviour-tested)
