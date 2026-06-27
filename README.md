@@ -56,7 +56,12 @@ TODO: clojars release
 
 The public surface lives in `claxon.client`. Everything else (`claxon.impl.*`) is implementation detail you shouldn't need to call directly.
 
-### `(connect)` / `(connect opts)`
+### connect
+
+```clojure
+(connect)
+(connect opts)
+```
 
 Opens a connection to a NATS server and performs the `INFO`/`CONNECT` handshake. Returns a `conn` map, pass this to every other function.
 
@@ -64,6 +69,7 @@ Opens a connection to a NATS server and performs the `INFO`/`CONNECT` handshake.
 (require '[claxon.client :as nats])
 
 (def conn (nats/connect))
+
 ;; or, with options:
 (def conn (nats/connect {:claxon/urls ["nats://localhost:4222"]
                          :claxon/timeout-ms 2000}))
@@ -82,7 +88,11 @@ Opens a connection to a NATS server and performs the `INFO`/`CONNECT` handshake.
 
 Any other key you pass (e.g. `:user`, `:pass`, `:name`) is forwarded as part of the JSON `CONNECT` payload sent to the server.
 
-### `(invoke conn frame)`
+### invoke
+
+```clojure
+(invoke conn frame)
+```
 
 Sends a frame to the server. `frame` is a map of `{:op ... :args ... :payloads ...}`.
 
@@ -103,7 +113,12 @@ Sends a frame to the server. `frame` is a map of `{:op ... :args ... :payloads .
 
 `:args` and `:payloads` only need to contain what the op actually requires see `claxon.conf/defaults`'s `:claxon/frame-shapes` for the full list of ops and their fields (`PUB`, `HPUB`, `SUB`, `UNSUB`, `PING`, `PONG`, etc). Byte counts (`:bytes`, `:hdr-bytes`) are always computed for you; don't pass them yourself.
 
-### `(add-handler conn handler matcher) / (add-handler conn handler err-handler matcher)`
+### add-handler
+
+```clojure
+(add-handler conn handler matcher)
+(add-handler conn handler err-handler matcher)
+```
 
 Registers a callback for incoming frames isolated to the connection. `matcher` is `{:op ... :args ...}`; `:args` is matched as a submap, so you can match loosely (e.g. only on `:subject`) or leave it out to match any args. Returns the handler id.
 Optionally takes in an error handler which will be invoked with the uncaught exception in the handler. Note: if there's an uncaught error in the err handler, **it will be swallowed**.
@@ -118,20 +133,20 @@ Optionally takes in an error handler which will be invoked with the uncaught exc
 
 The handler receives `(frame conn)` the parsed frame and the connection it arrived on. Handlers run on the background reader thread; keep them fast or hand off work yourself (e.g. via `future` or a queue).
 
-### `(remove-handler id)`
+### remove-handler
 
 Removes/Unregisters a handler by id. no-op if not found.
 
 ```clojure
-(nats/remove-handler id)
+(remove-handler id)
 ```
 
-### `(close conn)`
+### close
 
-Tears down the connection: removes its handlers, closes the socket streams, shuts down its executor, and closes the socket.
+Tears down the connection idempotently: removes its handlers, closes the socket streams, shuts down its executor, and closes the socket.
 
 ```clojure
-(nats/close conn)
+(close conn)
 ```
 
 ## Examples
@@ -179,9 +194,9 @@ All values would be passed as described.
 
 ### JetStream and KV, using only the core protocol
 
-claxon has no JetStream- or KV-specific functions. It doesn't need any: both are implemented on the NATS server as regular subjects (`$JS.API.*` for management, `$KV.<bucket>.<key>` for KV) that you talk to with ordinary `PUB`/`SUB`/`HPUB`: the same four functions used everywhere else in this README. The examples below show that explicitly, including the request/reply pattern (subscribe to an inbox, publish with `:reply-to` set to it) that claxon doesn't wrap for you.
+claxon has no JetStream- or KV-specific functions, both are implemented on the NATS server as regular subjects (`$JS.API.*` for management, `$KV.<bucket>.<key>` for KV) that you talk to with ordinary `PUB`/`SUB`/`HPUB`: the same four functions used everywhere else in this README. The examples below show that explicitly, including the request/reply pattern (subscribe to an inbox, publish with `:reply-to` set to it) that claxon doesn't wrap for you.
 
-A small helper makes the request/reply dance less repetitive: this is something you'd write once in your own code, not something claxon ships:
+A small helper makes the request/reply dance less repetitive: this is something you'd write once in your own code, not something claxon ships (yet):
 
 ```clojure
 (defn request
@@ -348,8 +363,7 @@ Each worker pulls one message at a time, processes it, and acks or nacks:
   (nats/invoke conn {:op "PUB" :args {:subject "jobs.new"} :payloads {:body (str "job " i)}}))
 ```
 
-A few things to note, since this is what makes it different from the queue
-group above:
+A few things to note, since this is what makes it different from the queue group above:
 
 - Unacked messages are automatically redelivered after `ack_wait` (30s here), to whichever worker pulls next: no message is lost if a worker dies mid-job.
 - A worker can actively reject a message (`-NAK`) to put it back for retry sooner than the ack-wait timeout, as shown in the `catch` above.
