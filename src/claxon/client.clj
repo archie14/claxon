@@ -31,10 +31,19 @@
 (defn remove-handler
   "Unregisters the handler with the given id, as returned by add-handler."
   [id]
-  (doseq [[cid ops] @ic/handlers ;; TODO: Maybe O(1) deletions later
-          [op hs] ops
-          :when (contains? hs id)]
-    (swap! ic/handlers update-in [cid op] dissoc id)))
+  ;; TODO: Maybe O(1) deletions later
+  (swap! ic/handlers
+         (fn [handlers]
+           (reduce-kv (fn [acc cid ops]
+                        (reduce-kv (fn [acc op hs]
+                                     (if (contains? hs id)
+                                       (update-in acc [cid op] dissoc id)
+                                       acc))
+                                   acc
+                                   ops))
+                      handlers
+                      handlers)))
+  nil)
 
 (defn invoke
   "Sends a frame ({:op ... :args ... :payloads ...}) to the server over conn."

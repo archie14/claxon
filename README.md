@@ -35,7 +35,7 @@ claxon is deliberately a _protocol_ client, not a full-featured NATS SDK. It doe
 
 **Current status: Stabilising**
 
-The following are **not yet implemented** but planned in order of priority:
+The following are **not yet implemented** but planned (based on asks/issues) in order of priority:
 
 - **WebSocket transport.** Only raw TCP sockets are supported as of now.
 - **Editor integration** Since the protocol is spec driven, clj-kondo/clojure-lsp can be hooked in to provide real time feedback on function calls.
