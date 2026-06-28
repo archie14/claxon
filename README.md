@@ -141,10 +141,10 @@ The handler receives `(frame conn)` the parsed frame and the connection it arriv
 
 ### remove-handler
 
-Removes/Unregisters a handler by id. no-op if not found.
+Removes/Unregisters a handler in a connection by id. no-op if not found.
 
 ```clojure
-(remove-handler id)
+(remove-handler conn id)
 ```
 
 ### close
@@ -219,7 +219,7 @@ A small helper to simplify the request/reply dance, not something claxon ships (
                   :args {:subject subject :reply-to inbox}
                   :payloads {:body body}})
     (let [frame (deref p timeout-ms :timeout)]
-      (remove-handler hid)
+      (remove-handler conn hid)
       (invoke conn {:op "UNSUB" :args {:sid inbox}})
       frame)))
 ```

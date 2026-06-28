@@ -8,10 +8,10 @@
    [java.util.concurrent ExecutorService]))
 
 (def read-json #?(:bb json/parse-string :clj json/read-str))
+
 (def write-json #?(:bb json/generate-string :clj json/write-str))
-(defonce conn-ids (atom 0))
+
 (defonce handler-ids (atom 0))
-(defonce handlers (atom {})) ;; TODO: indexed on conn id -> op -> handlers, ENHANCE moar
 
 (defn parse-nats-url
   [url]
@@ -50,8 +50,8 @@
 (defn dispatch
   [{:keys [op] :as frame}
    handlers
-   {:keys [^ExecutorService executor id] :as conn}]
-  (->> (get-in handlers [id op])
+   {:keys [^ExecutorService executor] :as conn}]
+  (->> (get @handlers op)
        (vals)
        (filter #(->> %
                      :matches

@@ -150,9 +150,9 @@
         payloads (merge payloads)))))
 
 (defn start
-  [{:keys [in ^ExecutorService executor frame-shapes] :as conn}]
+  [{:keys [in ^ExecutorService executor frame-shapes handlers] :as conn}]
   (.submit executor
            ^Runnable
            #(loop []
-              (ic/dispatch (read-frame in frame-shapes) @ic/handlers conn)
+              (ic/dispatch (read-frame in frame-shapes) handlers conn)
               (recur))))

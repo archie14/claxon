@@ -20,29 +20,25 @@
    (add-handler conn handler nil matches))
   ([conn handler err-handler {:keys [op args]}]
    (let [id (swap! ic/handler-ids inc)]
-     (swap! ic/handlers
+     (swap! (:handlers conn)
             assoc-in
-            [(:id conn) op id]
+            [op id]
             {:fn handler
              :efn err-handler
              :matches {:args args}})
      id)))
 
 (defn remove-handler
-  "Unregisters the handler with the given id, as returned by add-handler."
-  [id]
+  "Unregisters the handler in a conn by id."
+  [{:keys [handlers]} id]
   ;; TODO: Maybe O(1) deletions later
-  (swap! ic/handlers
-         (fn [handlers]
-           (reduce-kv (fn [acc cid ops]
-                        (reduce-kv (fn [acc op hs]
-                                     (if (contains? hs id)
-                                       (update-in acc [cid op] dissoc id)
-                                       acc))
-                                   acc
-                                   ops))
-                      handlers
-                      handlers)))
+  (swap! handlers
+         #(reduce-kv (fn [acc op hs]
+                       (if (contains? hs id)
+                         (assoc acc op (dissoc hs id))
+                         (assoc acc op hs)))
+                     {}
+                     %))
   nil)
 
 (defn invoke
@@ -91,13 +87,13 @@
          out (-> socket
                  .getOutputStream
                  BufferedOutputStream.)
-         conn {:id (swap! ic/conn-ids inc)
-               :socket socket
+         conn {:socket socket
                :in in
                :out out
                :executor executor
                :frame-shapes frame-shapes
-               :write-lock (ReentrantLock.)}
+               :write-lock (ReentrantLock.)
+               :handlers (atom {})} ;; TODO: indexed on op -> hid -> handler, ENHANCE moar
          info (-> in
                   (ir/read-frame frame-shapes)
                   :args
@@ -134,15 +130,13 @@
 
 (defn close
   "Closes conn: deregisters its handlers, shuts down its executor, and closes the underlying socket."
-  [{:keys [socket executor id]}]
-  (swap! ic/handlers dissoc id)
+  [{:keys [socket executor handlers]}]
+  (reset! handlers {})
   (ExecutorService/.shutdown executor)
   (Socket/.close socket))
 
 (comment
   (set! *warn-on-reflection* true)
-
-  (deref ic/handlers)
 
   (def conn (connect {:claxon/verify-tls false}))
 
