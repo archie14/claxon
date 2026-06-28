@@ -46,7 +46,11 @@
   nil)
 
 (defn invoke
-  "Sends a frame ({:op ... :args ... :payloads ...}) to the server over conn."
+  "Sends a frame ({:op ... :args ... :payloads ...}) to the server over conn.
+
+  op: the operation, eg PUB, SUB, PING etc as a string
+  args: the map of args, eg {:subject foo :sid 10}
+  payloads: the map of (generally bytes payloads), eg for PUB"
   [conn {:keys [op args payloads]}]
   (iw/snd conn op args payloads))
 
