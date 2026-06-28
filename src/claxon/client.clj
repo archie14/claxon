@@ -47,7 +47,6 @@
 
 (defn invoke
   "Sends a frame ({:op ... :args ... :payloads ...}) to the server over conn.
-
   op: the operation, eg PUB, SUB, PING etc as a string
   args: the map of args, eg {:subject foo :sid 10}
   payloads: the map of (generally bytes payloads), eg for PUB"
@@ -55,7 +54,8 @@
   (iw/snd conn op args payloads))
 
 (defn connect
-  "Opens a connection to a NATS server and performs the INFO/CONNECT handshake, upgrading to TLS first if the server requires it. opts is merged over claxon.conf/defaults.
+  "Opens a connection to a NATS server and performs the INFO/CONNECT handshake, upgrading to TLS first if the server requires it.
+  opts is merged over claxon.conf/defaults.
   Returns a conn map to be passed to every other function in this namespace."
   ([]
    (connect {}))
@@ -67,19 +67,24 @@
                  claxon/handlers
                  claxon/verify-tls
                  claxon/frame-shapes]} opts
-         {:keys [host port ^Socket socket]}
+         {:keys [host port ^Socket socket user password]}
          (->> urls
               (map ic/parse-nats-url)
               (shuffle)
-              (some (fn [{:keys [^String host ^Integer port]}]
+              (some (fn [{:keys [^String host ^Integer port user password]}]
                       (try
                         {:socket (doto (Socket.)
                                    (.connect (InetSocketAddress. host port) timeout-ms))
                          :host host
-                         :port port}
+                         :port port
+                         :user user
+                         :password password}
                         (catch Exception _ false)))))
          _ (when-not socket
              (throw (ex-info "Cannot connect to any of the urls" {:urls urls})))
+         opts (cond-> opts
+                user (assoc :user user)
+                password (assoc :password password))
          in (-> socket
                 .getInputStream
                 BufferedInputStream.)
