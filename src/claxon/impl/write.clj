@@ -85,10 +85,9 @@
       (.lock write-lock)
       (try
         (.write out (.getBytes control "UTF-8"))
-        (.flush out)
         (when (seq encoded)
           (run! #(.write out ^bytes %) encoded)
-          (.write out (.getBytes "\r\n" "UTF-8"))
-          (.flush out))
+          (.write out (.getBytes "\r\n" "UTF-8")))
+        (.flush out)
         (finally
           (.unlock write-lock))))))

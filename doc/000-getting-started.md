@@ -44,7 +44,7 @@ See CONNECT [docs](https://docs.nats.io/reference/reference-protocols/nats-proto
 | `:verbose` | `false` | Set +OK protocol acknowledgements. |
 | `:claxon/executor` | `(Executors/newVirtualThreadPerTaskExecutor)` | Executor used to run the background frame-reading loop and handlers. |
 | `:claxon/frame-shapes` | the full NATS op table | The data-driven protocol description. Override this with care. |
-| `:claxon/handlers` | a default `PING`→`PONG` responder | Handlers registered automatically on connect. |
+| `:claxon/handlers` | a `PING` responder and an `-ERR` handler | Handlers registered automatically on connect. |
 | `:claxon/timeout-ms` | `2000` | Socket connect timeout per URL. |
 | `:claxon/urls` | `["nats://localhost:4222"]` | Candidate server URLs, tried in random order until one connects. |
 | `:claxon/verify-tls` | `true` | Set this to disable client SSL verification. |

@@ -252,16 +252,6 @@
   (let [wire (capture "HPUB" {:subject "FOO"} {:headers {:headers {"Bar" ["Baz"]}} :body "Hello NATS!"})]
     (is (= "HPUB FOO 22 33\r\nNATS/1.0\r\nBar: Baz\r\n\r\nHello NATS!\r\n" wire))))
 
-(deftest snd-flushes-control-line-and-payload-separately
-  (testing "snd performs (at least) two flushes: once after the control line, once after the payload"
-    (let [flush-count (atom 0)
-          out (proxy [java.io.OutputStream] []
-                (write [b] nil)
-                (flush [] (swap! flush-count inc)))
-          conn {:out out :frame-shapes default-shapes :write-lock (ReentrantLock.)}]
-      (iw/snd conn "PUB" {:subject "FOO"} {:body "hi"})
-      (is (>= @flush-count 2)))))
-
 ;; ---------------------------------------------------------------------------
 ;; round-trip: write then read should agree, for every op the client emits
 ;; ---------------------------------------------------------------------------

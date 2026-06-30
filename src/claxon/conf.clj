@@ -15,7 +15,10 @@
    :claxon/timeout-ms 2000
    :claxon/executor (Executors/newVirtualThreadPerTaskExecutor)
    :claxon/handlers {{:op "PING"} {:f (fn [_ conn] (iw/snd conn "PONG" nil nil))
-                                   :ef (fn [_ _ ex] (prn ex))}}
+                                   :ef (fn [_ _ ex] (prn ex))}
+                     {:op "-ERR"} {:f (fn [{:keys [args]} _]
+                                        (binding [*err* *out*]
+                                          (println "Error" (:msg args))))}}
    :claxon/verify-tls true
    :claxon/frame-shapes {"INFO" {:args [{:name :info :type :json}]}
                          "CONNECT" {:args [{:name :opts :type :json}]}
