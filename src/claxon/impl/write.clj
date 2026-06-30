@@ -12,9 +12,18 @@
                        status (str " " status)
                        description (str " " description))
         header-lines (mapcat (fn [[k vs]]
-                               (map #(str k ": " %) vs))
+                               (let [k (if (keyword? k)
+                                         (name k)
+                                         k)
+                                     vs (if-not (sequential? vs)
+                                          [vs]
+                                          vs)]
+                                 (map #(str k ": " %) vs)))
                              headers)
-        block (str/join "\r\n" (concat [version-line] header-lines ["" ""]))]
+        block (str/join "\r\n"
+                        (concat [version-line]
+                                header-lines
+                                ["" ""]))]
     (.getBytes ^String block "UTF-8")))
 
 (defn ->payload-bytes
@@ -72,9 +81,8 @@
           full-args (merge args length-args)
           args-line (render-args-line (:args shape) full-args)
           control (str op (when (seq args-line)
-                            (str " " args-line)) "\r\n")
-          lock (or write-lock (ReentrantLock.))]
-      (.lock lock)
+                            (str " " args-line)) "\r\n")]
+      (.lock write-lock)
       (try
         (.write out (.getBytes control "UTF-8"))
         (.flush out)
@@ -83,4 +91,4 @@
           (.write out (.getBytes "\r\n" "UTF-8"))
           (.flush out))
         (finally
-          (.unlock lock))))))
+          (.unlock write-lock))))))

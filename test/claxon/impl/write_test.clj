@@ -3,9 +3,11 @@
    [claxon.conf :as conf]
    [claxon.impl.read :as ir]
    [claxon.impl.write :as iw]
+   [clojure.string :as str]
    [clojure.test :refer [deftest is testing]])
   (:import
-   [java.io ByteArrayInputStream ByteArrayOutputStream]))
+   [java.io ByteArrayInputStream ByteArrayOutputStream]
+   [java.util.concurrent.locks ReentrantLock]))
 
 ;; ---------------------------------------------------------------------------
 ;; helpers
@@ -18,7 +20,7 @@
    claxon.impl.write/snd, returning the raw bytes written as a string."
   [op args payloads]
   (let [out (ByteArrayOutputStream.)
-        conn {:out out :frame-shapes default-shapes}]
+        conn {:out out :frame-shapes default-shapes :write-lock (ReentrantLock.)}]
     (iw/snd conn op args payloads)
     (String. (.toByteArray out) "UTF-8")))
 
@@ -55,6 +57,49 @@
   (let [encoded (iw/encode-headers-block {:headers {} :status 100})]
     (is (= "NATS/1.0 100\r\n\r\n" (String. ^bytes encoded "UTF-8")))))
 
+(deftest encode-headers-block-keyword-key
+  (testing "a keyword header key is rendered via its name, dropping the leading colon"
+    (let [encoded (iw/encode-headers-block {:headers {:Bar ["Baz"]}})]
+      (is (= "NATS/1.0\r\nBar: Baz\r\n\r\n" (String. ^bytes encoded "UTF-8"))))))
+
+(deftest encode-headers-block-namespaced-keyword-key
+  (testing "name strips the namespace too, same as any other keyword"
+    (let [encoded (iw/encode-headers-block {:headers {:kv/Operation ["DEL"]}})]
+      (is (= "NATS/1.0\r\nOperation: DEL\r\n\r\n" (String. ^bytes encoded "UTF-8"))))))
+
+(deftest encode-headers-block-keyword-and-string-keys-mixed
+  (let [encoded (iw/encode-headers-block {:headers {:Bar ["Baz"] "Lunch" ["Burger"]}})
+        s (String. ^bytes encoded "UTF-8")]
+    (is (str/includes? s "Bar: Baz\r\n"))
+    (is (str/includes? s "Lunch: Burger\r\n"))))
+
+(deftest encode-headers-block-single-string-value-not-wrapped-by-caller
+  (testing "a bare string value (not wrapped in a vector) is treated as a single header value"
+    (let [encoded (iw/encode-headers-block {:headers {"Bar" "Baz"}})]
+      (is (= "NATS/1.0\r\nBar: Baz\r\n\r\n" (String. ^bytes encoded "UTF-8"))))))
+
+(deftest encode-headers-block-single-non-string-scalar-value
+  (testing "a bare non-string scalar (e.g. a number) is also wrapped and stringified"
+    (let [encoded (iw/encode-headers-block {:headers {"Count" 42}})]
+      (is (= "NATS/1.0\r\nCount: 42\r\n\r\n" (String. ^bytes encoded "UTF-8"))))))
+
+(deftest encode-headers-block-keyword-key-with-scalar-value
+  (testing "keyword key and bare scalar value combine correctly"
+    (let [encoded (iw/encode-headers-block {:headers {:KV-Operation "DEL"}})]
+      (is (= "NATS/1.0\r\nKV-Operation: DEL\r\n\r\n" (String. ^bytes encoded "UTF-8"))))))
+
+(deftest encode-headers-block-vector-value-still-multi-valued
+  (testing "a sequential value is untouched -- still expands to one line per element,
+            same as before this change"
+    (let [encoded (iw/encode-headers-block {:headers {:Breakfast ["donut" "eggs"]}})]
+      (is (= "NATS/1.0\r\nBreakfast: donut\r\nBreakfast: eggs\r\n\r\n"
+             (String. ^bytes encoded "UTF-8"))))))
+
+(deftest encode-headers-block-list-value-is-sequential-not-rewrapped
+  (testing "a list (not just a vector) is also sequential, so it isn't wrapped into [vs]"
+    (let [encoded (iw/encode-headers-block {:headers {"Bar" (list "Baz" "Qux")}})]
+      (is (= "NATS/1.0\r\nBar: Baz\r\nBar: Qux\r\n\r\n" (String. ^bytes encoded "UTF-8"))))))
+
 ;; ---------------------------------------------------------------------------
 ;; ->payload-bytes
 ;; ---------------------------------------------------------------------------
@@ -75,6 +120,10 @@
 (deftest payload-bytes-headers-type-delegates-to-encoder
   (let [encoded (iw/->payload-bytes :headers {:headers {"Bar" ["Baz"]}})]
     (is (= "NATS/1.0\r\nBar: Baz\r\n\r\n" (String. ^bytes encoded "UTF-8")))))
+
+(deftest payload-bytes-headers-type-supports-keyword-keys-and-scalar-values
+  (let [encoded (iw/->payload-bytes :headers {:headers {:KV-Operation "DEL"}})]
+    (is (= "NATS/1.0\r\nKV-Operation: DEL\r\n\r\n" (String. ^bytes encoded "UTF-8")))))
 
 (deftest payload-bytes-unknown-type-throws
   (is (thrown? clojure.lang.ExceptionInfo (iw/->payload-bytes :unknown "x"))))
@@ -209,7 +258,7 @@
           out (proxy [java.io.OutputStream] []
                 (write [b] nil)
                 (flush [] (swap! flush-count inc)))
-          conn {:out out :frame-shapes default-shapes}]
+          conn {:out out :frame-shapes default-shapes :write-lock (ReentrantLock.)}]
       (iw/snd conn "PUB" {:subject "FOO"} {:body "hi"})
       (is (>= @flush-count 2)))))
 
@@ -235,6 +284,28 @@
                            :body "Yum!"})]
     (is (= {"BREAKFAST" ["donut" "eggs"]} (get-in frame [:headers :headers])))
     (is (= "Yum!" (String. ^bytes (:body frame) "UTF-8")))))
+
+(deftest round-trip-hpub-keyword-keys-and-scalar-values-normalize-on-read
+  (testing "headers written with keyword keys and bare scalar values come back out
+            the other end (via read-frame) in the same canonical {string [vector]}
+            shape as headers written the old way -- the relaxed input format on
+            the write side is purely a writer convenience, the wire format and
+            the parsed shape are unaffected"
+    (let [frame (round-trip "HPUB"
+                            {:subject "$KV.profiles.sue"}
+                            {:headers {:headers {:KV-Operation "DEL"}}
+                             :body nil})]
+      (is (= {"KV-Operation" ["DEL"]} (get-in frame [:headers :headers])))
+      (is (= 0 (alength ^bytes (:body frame)))))))
+
+(deftest round-trip-hpub-keyword-keys-mixed-with-multi-value-headers
+  (let [frame (round-trip "HPUB"
+                          {:subject "FOO"}
+                          {:headers {:headers {:Breakfast ["donut" "eggs"]
+                                               "Lunch" "Burger"}}
+                           :body "Yum!"})]
+    (is (= {"Breakfast" ["donut" "eggs"] "Lunch" ["Burger"]}
+           (get-in frame [:headers :headers])))))
 
 (deftest round-trip-connect-json
   (let [frame (round-trip "CONNECT" {:opts {"verbose" false "lang" "clojure" "protocol" 1}} nil)]
