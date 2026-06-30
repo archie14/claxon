@@ -1,0 +1,5 @@
+{:cljdoc/langauges ["clj"]
+ :cljdoc.doc/tree [["Readme" {:file "README.md"}]
+                   ["Getting Started" {:file "doc/000-getting-started.md"}]
+                   ["Rationale" {:file "doc/001-rationale.md"}]
+                   ["Examples and Recipes" {:file "doc/002-examples-and-recipes.md"}]]}
