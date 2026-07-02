@@ -2,7 +2,8 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg?style=flat)](https://choosealicense.com/licenses/mit/)
 [![bb compatible](https://raw.githubusercontent.com/babashka/babashka/master/logo/badge.svg)](https://book.babashka.org#badges)
-[![](https://github.com/lispyclouds/claxon/workflows/Tests/badge.svg)](https://github.com/lispyclouds/claxon/actions?query=workflow%3ATests)
+[![CI](https://github.com/lispyclouds/claxon/workflows/Tests/badge.svg)](https://github.com/lispyclouds/claxon/actions?query=workflow%3ATests)
+[![Clojars](https://img.shields.io/clojars/v/org.clojars.lispyclouds/claxon.svg)](https://clojars.org/org.clojars.lispyclouds/claxon)
 
 A minimal, pure-Clojure, data-driven, _always_ backward and (ideally) forward compatible [NATS](https://nats.io) client.
 

@@ -55,6 +55,7 @@
 (defn connect
   "Connects to a NATS server and performs the INFO/CONNECT handshake, upgrading to TLS if required.
   opts are merged over claxon.conf/defaults.
+  Credentials found in the URLs are preferred over the ones supplied as fn opts.
   Returns a conn map to be passed to other functions."
   ([]
    (connect {}))
