@@ -2,7 +2,7 @@
 
 Most Clojure NATS clients are thin wrappers around the official Java SDK (`nats.java`). That's a perfectly reasonable choice, but it comes with a JVM tax: you get nats.java's threading model, its option-builder classes, and a hard dependency on a full JVM, which means no runtimes like Babashka.
 
-claxon takes the other path. The [NATS client protocol](https://docs.nats.io/reference/reference-protocols/nats-protocol) is a small, text-based, line-oriented protocol. claxon implements the protocol directly against a plain `java.net.Socket`, using nothing but Clojure data to describe the wire format with the following goals:
+The [NATS client protocol](https://docs.nats.io/reference/reference-protocols/nats-protocol) is a small, text-based, line-oriented protocol. claxon implements the protocol directly against a plain `java.net.Socket`, using plain Clojure data to describe the wire format with the following consequences:
 
 - **Babashka-compatible.** claxon runs as a script, in a `bb.edn` project, or embedded in a larger bb-based tool, with no AOT compilation and no native dependencies beyond the JVM/GraalVM that bb already ships.
 - **Small, inspectable and flexible** The entire protocol surface is described as data in one map (`claxon.conf/defaults`'s `:claxon/frame-shapes`) ops, their arguments, and their payloads. Reading and writing frames are both generic interpreters over that data, not one function per operation. Additionally, the default protocol behaviour can be influenced and new things added, all from the userland.
@@ -14,47 +14,20 @@ It doesn't try to be a drop-in replacement for nats.java's surface area, see [Ro
 
 ## Design
 
-```mermaid
-flowchart TB
-    App["your application code"]
-    Client["claxon.client<br/><b>connect · invoke · add-handler · remove-handler · close</b><br/><i>public API</i>"]
+Overall, all it does is:
 
-    subgraph Impl["claxon.impl.* and claxon.conf (implementation detail)"]
-        direction LR
-        Conf["claxon.conf<br/><i>defaults,<br/>:claxon/frame-shapes</i>"]
-        Write["claxon.impl.write<br/><i>snd: encodes &amp;<br/>writes a frame</i>"]
-        Read["claxon.impl.read<br/><i>read-frame: decodes<br/>a frame from bytes</i>"]
-        Sock["claxon.impl.sock<br/><i>-&gt;tls: upgrades<br/>the socket</i>"]
-        Common["claxon.impl.common<br/><i>dispatch, submap?,<br/>parse-nats-url, json</i>"]
-    end
+1. Attempt to connect to a NATS instance with options.
+1. Read the `INFO` message and upgrade to TLS if necessary.
+1. Setup a few default handlers for `PING` and `-ERR` messages.
+1. Start an infinite event loop on a background thread which dispatches frames to relevant handlers based on the default op table.
+1. Handlers can be added and removed orthogonally per connection.
 
-    Socket["java.net.Socket<br/>TCP, optionally TLS"]
-    Server(("NATS server"))
-    Loop["background reader loop<br/>on :claxon/executor<br/><i>read-frame → dispatch →<br/>matching handlers</i>"]
+### Considerations
 
-    App -->|"connect / invoke / add-handler"| Client
-    Client --> Conf & Write & Read & Sock & Common
-    Conf --> Write
-    Write & Read & Sock --> Common
-    Write -->|writes| Socket
-    Socket -->|"PUB / SUB / PING / ..."| Server
-    Server -->|"MSG / PING / ..."| Socket
-    Socket -->|reads| Read
-    Read --> Loop
-    Loop -->|"runs your handler fn"| App
-
-    classDef api fill:#eef2ff,stroke:#6366f1,color:#3730a3
-    classDef impl fill:#fafafa,stroke:#a1a1aa,color:#3f3f46
-    classDef sock fill:#1e293b,stroke:#0f172a,color:#f1f5f9
-    classDef loop fill:#fff1f2,stroke:#fb7185,color:#9f1239
-    classDef app fill:#f8fafc,stroke:#cbd5e1,color:#0f172a
-
-    class Client api
-    class Conf,Write,Read,Sock,Common impl
-    class Socket sock
-    class Loop loop
-    class App,Server app
-```
+- Java 21+ and Virtual threads are assumed. This model serves really well for a NATS client which is designed for lightweight high throughput systems.
+- Handlers are plain functions receiving the frame and the connection with basic matching based dispatch. Further logic is often business specific and is left to the users.
+- Claxon is quite minimal in the sense that all it knows is how to do TCP and basic table driven parsing. This ensures flexibility in both backwards and forwards direction and is mostly externally configurable.
+- It is at the end of the day a `some assembly required` lib, trading off convenience over flexibility.
 
 ## Comparison to other Clojure NATS clients
 
