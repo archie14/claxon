@@ -51,6 +51,8 @@ Incoming headers are always parsed back as `{<string> [<string> ...]}`, regardle
 claxon has no JetStream or KV specific functions yet, all are implemented on the NATS server as regular subjects (`$JS.API.*` for management, `$KV.<bucket>.<key>` for KV) that you talk to with ordinary `PUB`/`SUB`/`HPUB`.
 The examples below show that explicitly, including the request/reply pattern (subscribe to an inbox, publish with `:reply-to` set to it) that claxon doesn't wrap for you.
 
+See [store.clj](https://github.com/bob-cd/bob/blob/main/common/src/common/store.clj) as a real world example of building a time-travelling KV store.
+
 A small helper to simplify the request/reply dance, not something claxon ships (yet):
 
 ```clojure
