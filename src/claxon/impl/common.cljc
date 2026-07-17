@@ -47,7 +47,7 @@
         pc (count s-pattern)
         sc (count sub)]
     (when (or (= pc sc)
-              (and (#{">"} (last s-pattern))
+              (and (= ">" (last s-pattern))
                    (<= (- pc 1) sc)))
       (->> s-pattern
            (take-while (complement #{">"}))
