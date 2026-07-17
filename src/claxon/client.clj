@@ -17,7 +17,6 @@
   Takes in an optional error-handler in case of uncaught exceptions in the handler.
   Uncaught exceptions in the error-handler will be swallowed.
   The handler will be passed in the frame and conn, the err-handler the exception as well.
-  The matches is matched as a simple submap of the top level keys.
   Returns a handler id, usable with remove-handler."
   ([conn handler matches]
    (add-handler conn handler nil matches))
