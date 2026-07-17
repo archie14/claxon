@@ -57,60 +57,60 @@
 
 (deftest submap-empty-sub-always-matches
   (testing "an empty/nil sub-map is satisfied by anything, including nil super"
-    (is (true? (ic/submap? nil nil)))
-    (is (true? (ic/submap? {:a 1} nil)))
-    (is (true? (ic/submap? {} {})))))
+    (is (true? (ic/matches? nil nil)))
+    (is (true? (ic/matches? {:a 1} nil)))
+    (is (true? (ic/matches? {} {})))))
 
-(deftest submap-exact-match
-  (is (true? (ic/submap? {:op "PING" :sid "1"} {:op "PING" :sid "1"}))))
+(deftest matches-exact-match
+  (is (true? (ic/matches? {:op "PING" :sid "1"} {:op "PING" :sid "1"}))))
 
-(deftest submap-partial-match
+(deftest matches-partial-match
   (testing "sub may be a strict subset of super's keys"
-    (is (true? (ic/submap? {:op "MSG" :sid "1" :subject "FOO"} {:op "MSG"})))))
+    (is (true? (ic/matches? {:op "MSG" :sid "1" :subject "FOO"} {:op "MSG"})))))
 
-(deftest submap-subject-match
+(deftest matches-subject-match
   (testing "match identical subjects"
-    (is (true? (ic/submap? {:op "MSG" :sid "1" :subject "aa.bb.cc"} {:op "MSG" :subject "aa.bb.cc"})))))
+    (is (true? (ic/matches? {:op "MSG" :sid "1" :subject "aa.bb.cc"} {:op "MSG" :subject "aa.bb.cc"})))))
 
-(deftest submap-subject-more-elements
+(deftest matches-subject-more-elements
   (testing "match message subject has more elements than handler subject"
-    (is (false? (ic/submap? {:op "MSG" :sid "1" :subject "aa.bb.cc.dd"} {:op "MSG" :subject "aa.bb.cc"})))))
+    (is (false? (ic/matches? {:op "MSG" :sid "1" :subject "aa.bb.cc.dd"} {:op "MSG" :subject "aa.bb.cc"})))))
 
-(deftest submap-subject-less-elements
+(deftest matches-subject-less-elements
   (testing "match message subject with fewer elements than handler subject"
-    (is (false? (ic/submap? {:op "MSG" :sid "1" :subject "aa.bb"} {:op "MSG" :subject "aa.bb.cc"})))))
+    (is (false? (ic/matches? {:op "MSG" :sid "1" :subject "aa.bb"} {:op "MSG" :subject "aa.bb.cc"})))))
 
-(deftest submap-subject-one-wildcard
+(deftest matches-subject-one-wildcard
   (testing "match message subject with handler with one * wildcard"
-    (is (true? (ic/submap? {:op "MSG" :sid "1" :subject "aa.bb.cc"} {:op "MSG" :subject "aa.*.cc"})))))
+    (is (true? (ic/matches? {:op "MSG" :sid "1" :subject "aa.bb.cc"} {:op "MSG" :subject "aa.*.cc"})))))
 
-(deftest submap-subject-two-wildcards
+(deftest matches-subject-two-wildcards
   (testing "match message subject with handler with two * wildcards"
-    (is (true? (ic/submap? {:op "MSG" :sid "1" :subject "aa.bb.cc"} {:op "MSG" :subject "*.bb.*"})))))
+    (is (true? (ic/matches? {:op "MSG" :sid "1" :subject "aa.bb.cc"} {:op "MSG" :subject "*.bb.*"})))))
 
-(deftest submap-subject-more-elements-wildcard
+(deftest matches-subject-more-elements-wildcard
   (testing "match message subject with more elements than handler with one * wildcard"
-    (is (false? (ic/submap? {:op "MSG" :sid "1" :subject "aa.bb.cc.dd"} {:op "MSG" :subject "aa.bb.*"})))))
+    (is (false? (ic/matches? {:op "MSG" :sid "1" :subject "aa.bb.cc.dd"} {:op "MSG" :subject "aa.bb.*"})))))
 
-(deftest submap-subject-one-accept-the-rest-wildcard
+(deftest matches-subject-one-accept-the-rest-wildcard
   (testing "match message subject with handler with one > wildcard"
-    (is (true? (ic/submap? {:op "MSG" :sid "1" :subject "aa.bb.cc"} {:op "MSG" :subject "aa.>"})))))
+    (is (true? (ic/matches? {:op "MSG" :sid "1" :subject "aa.bb.cc"} {:op "MSG" :subject "aa.>"})))))
 
-(deftest submap-subject-multiple-wildcards
+(deftest matches-subject-multiple-wildcards
   (testing "match message subject with handler with one * and one > wildcard"
-    (is (true? (ic/submap? {:op "MSG" :sid "1" :subject "aa.bb.cc.dd"} {:op "MSG" :subject "aa.*.>"})))))
+    (is (true? (ic/matches? {:op "MSG" :sid "1" :subject "aa.bb.cc.dd"} {:op "MSG" :subject "aa.*.>"})))))
 
 
-(deftest submap-missing-key-fails
+(deftest matches-missing-key-fails
   (testing "a key present in sub but absent from super fails the match"
-    (is (false? (ic/submap? {:op "MSG"} {:op "MSG" :sid "1"})))))
+    (is (false? (ic/matches? {:op "MSG"} {:op "MSG" :sid "1"})))))
 
-(deftest submap-value-mismatch-fails
-  (is (false? (ic/submap? {:op "MSG"} {:op "PING"}))))
+(deftest matches-value-mismatch-fails
+  (is (false? (ic/matches? {:op "MSG"} {:op "PING"}))))
 
-(deftest submap-nil-value-present-as-key
+(deftest matches-nil-value-present-as-key
   (testing "a key explicitly mapped to nil in super still counts as 'contains'"
-    (is (true? (ic/submap? {:op nil} {:op nil})))))
+    (is (true? (ic/matches? {:op nil} {:op nil})))))
 
 ;; ---------------------------------------------------------------------------
 ;; dispatch
