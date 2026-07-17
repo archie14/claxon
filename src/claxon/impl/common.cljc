@@ -38,11 +38,31 @@
      :password password
      :token token}))
 
-(defn submap?
+(defn subject-matches?
+  "Matches subject in frame against given subject pattern from handler.
+   Pattern works according to NATS subject hierarchy wildcards.
+   Returns boolean"
+  [subject subject-pattern]
+  (let [s-pattern (str/split subject-pattern #"\.")
+        sub (str/split subject #"\.")]
+    (when (or (= (count s-pattern) (count sub))
+              (some #{">"} s-pattern))
+      (->> s-pattern
+           (take-while (complement #{">"}))
+           (map (fn [s p]
+                  (or (= s p)
+                      (= "*" p))) sub)
+           (every? identity)))))
+
+(defn matches?
   [super sub]
-  (every? (fn [[k v]]
-            (and (contains? super k)
-                 (= v (get super k))))
+  (every? (fn [[pk pv]]
+            (let [av (get super pk)]
+              (when (contains? super pk)
+                (if (= pk :subject)
+                  (subject-matches? av pv)
+                  (= av pv)))))
+
           sub))
 
 (defn dispatch
@@ -54,7 +74,7 @@
        (filter #(->> %
                      :matches
                      :args
-                     (submap? (:args frame))))
+                     (matches? (:args frame))))
        (run! (fn [handler]
                (let [task (bound-fn [] ;; bound-fn captures scope before dispatching on a thread
                             (try
@@ -65,8 +85,21 @@
                  (.submit executor ^Runnable task))))))
 
 (comment
+
   (set! *warn-on-reflection* true)
 
-  (submap? nil {:foo :bar})
+  (matches? nil {:foo :bar})
 
-  (parse-nats-url "nats://foo"))
+  ;; Five main variants for subject matching
+  (subject-matches? "ll.x.xx" "ll.x.xx") ;; true - subjects are identical
+
+  (subject-matches? "ll.r.xx" "ll.x.xx") ;; false - second element in subjects differs
+
+  (subject-matches? "ll.x.xx" "ll.x") ;; nil (equals false) - amont of elements in subjects differs
+
+  (subject-matches? "ll.r.xx" "ll.*.xx") ;; true - second element contains * wildcard
+
+  (subject-matches? "ll.r.xx" "ll.>") ;; true - contains > wildcard. Notice amount of element between subjects differs
+  )
+
+
