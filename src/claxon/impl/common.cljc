@@ -38,30 +38,30 @@
      :password password
      :token token}))
 
-(defn subject-match?
-  "Matches subject strings as defined in message and handler.
-     Match applies NATS defined wildcards to be used.
-     Returns boolean"
-  [message handler]
-  (let [hlr (str/split handler #"\.")
-        msg (str/split message #"\.")]
-    (when (or (= (count hlr) (count msg))
-              (some #{">"} hlr))
-      (->> hlr
+(defn subject-matches?
+  "Matches subject in frame against given subject pattern from handler.
+   Matches according to NATS subject hierarchy wildcards to be used.
+   Returns boolean"
+  [subject subject-pattern]
+  (let [s-pattern (str/split subject-pattern #"\.")
+        sub (str/split subject #"\.")]
+    (when (or (= (count s-pattern) (count sub))
+              (some #{">"} s-pattern))
+      (->> s-pattern
            (take-while (complement #{">"}))
-           (map (fn [m h]
-                  (or (= m h)
-                      (= "*" h))) msg)
+           (map (fn [s p]
+                  (or (= s p)
+                      (= "*" p))) sub)
            (every? identity)))))
 
-(defn submap?
+(defn matches?
   [super sub]
-  (every? (fn [[hk hv]]
-            (let [mv (get super hk)]
-              (when (contains? super hk)
-                (cond->> hv
-                  (not (= hk :subject)) (= mv)
-                  (= hk :subject) (subject-match? mv)))))
+  (every? (fn [[pk pv]]
+            (let [av (get super pk)]
+              (when (contains? super pk)
+                (if (= pk :subject)
+                  (subject-matches? av pv)
+                  (= av pv)))))
 
           sub))
 
@@ -74,7 +74,7 @@
        (filter #(->> %
                      :matches
                      :args
-                     (submap? (:args frame))))
+                     (matches? (:args frame))))
        (run! (fn [handler]
                (let [task (bound-fn [] ;; bound-fn captures scope before dispatching on a thread
                             (try
@@ -84,36 +84,3 @@
                                   (efn frame conn e)))))]
                  (.submit executor ^Runnable task))))))
 
-(comment
-  (set! *warn-on-reflection* true)
-
-  (submap? nil {:foo :bar})
-
-  (defn submap?
-    [super sub]
-    (every? (fn [[hk hv]]
-              (let [mv (get super hk)]
-                (when (contains? super hk)
-                  (cond->> hv
-                    (not (= hk :subject)) (= mv)
-                    (= hk :subject) (subject-match? mv)))))
-
-            sub))
-
-  (defn subject-match?
-    "Matches subject strings as defined in message and handler.
-     Match applies NATS defined wildcards to be used.
-     Returns boolean"
-    [message handler]
-    (let [hlr (str/split handler #"\.")
-          msg (str/split message #"\.")]
-      (when (or (= (count hlr) (count msg))
-                (some #{">"} hlr))
-        (->> hlr
-             (take-while (complement #{">"}))
-             (map (fn [m h]
-                    (or (= m h)
-                        (= "*" h))) msg)
-             (every? identity)))))
-
-  (subject-match? "ll.r.xx" "ll.x.xx"))
